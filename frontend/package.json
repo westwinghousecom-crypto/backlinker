@@ -14,7 +14,7 @@
   "dependencies": {
     "@babel/runtime": "^7.29.13",
     "@base-ui/react": "^1.9.0",
-    "appwrite": "^29.2.0",
+    "appwrite": "^29.3.1",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "lucide-react": "^1.70.0",
