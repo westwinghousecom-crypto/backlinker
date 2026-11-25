@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: jobs only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Placeholders so the web app builds in CI. These are public-by-design values, never secrets.
+  NEXT_PUBLIC_API_URL: https://api.example.com
+  NEXT_PUBLIC_APPWRITE_ENDPOINT: https://cloud.appwrite.io/v1
+  NEXT_PUBLIC_APPWRITE_PROJECT_ID: ci-placeholder-project
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Third-party actions are pinned to a major version tag. For stricter supply-chain control, pin each to a full commit SHA
+      # (Dependabot below keeps them updated).
+      - uses: actions/checkout@v4 # whole repo: tests/test_frontend_contract.py reads ../frontend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14" # confirm this version is available on the runner image; adjust if not
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+      - name: Install
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Test
+        working-directory: backend
+        run: python -m pytest -q
+
+  frontend:
+    name: Frontend tests, types, lint, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm run test
+      - name: Generate route types
+        run: npx next typegen # LayoutProps/PageProps types are generated, so tsc needs this on a fresh checkout
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npm run lint
+      - name: Production build
+        run: npm run build
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: quickindex-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build web image (not pushed)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: false
+          tags: quickindex-web:ci
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_APPWRITE_ENDPOINT=${{ env.NEXT_PUBLIC_APPWRITE_ENDPOINT }}
+            NEXT_PUBLIC_APPWRITE_PROJECT_ID=${{ env.NEXT_PUBLIC_APPWRITE_PROJECT_ID }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  security:
+    name: Dependency and secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Python dependency audit (runtime requirements)
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Node dependency audit (production dependencies only)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Organisation-owned repositories also need a GITLEAKS_LICENSE secret (free key from gitleaks.io).
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

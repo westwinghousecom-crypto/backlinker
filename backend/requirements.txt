@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+appwrite
+aiohttp
+pydantic-settings
+python-dotenv
+
+certifi
+
+cryptography
+tzdata

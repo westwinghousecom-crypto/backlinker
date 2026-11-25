@@ -1,0 +1,15 @@
+# Not needed for the web deployment: keeps the upload small and the build fast.
+backend
+docs
+scripts
+.github
+.vscode
+.mcp.json
+Caddyfile
+docker-compose.yml
+.env*
+**/.next
+**/__pycache__
+frontend/tsconfig.tsbuildinfo
+frontend/Dockerfile
+**/node_modules

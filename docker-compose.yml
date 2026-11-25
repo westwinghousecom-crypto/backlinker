@@ -1,0 +1,117 @@
+# QuickIndex production stack: Caddy (HTTPS) -> web (Next.js) + api (FastAPI with its in-process workers).
+# Appwrite Cloud is the ONLY data service (auth + database + job queue). No Redis, no other infrastructure.
+#
+#   cp .env.production.example .env.production          # domains + web build args (public values)
+#   cp backend/.env.production.example backend/.env.production   # API secrets (never commit)
+#   docker compose --env-file .env.production up -d --build
+#
+# REQUIREMENT: app and API must be SAME-SITE and HTTPS (app.example.com + api.example.com). The Google sign-in cookie that
+# ties an OAuth attempt to the browser that started it is only sent to the API when both hosts share a registrable domain.
+#
+# Not validated in the environment that wrote this file (no Docker available there): run `docker compose config` and a
+# staging deploy before relying on it.
+
+name: quickindex
+
+services:
+  api:
+    build:
+      context: ./backend
+    image: quickindex-api:latest
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.production
+    environment:
+      # uvicorn only trusts X-Forwarded-* from this exact address (the proxy below). Never '*'.
+      FORWARDED_ALLOW_IPS: ${PROXY_IP:-172.28.0.10}
+    # Exactly one replica: workers, in-memory rate limits and the single Google worker live inside this one process.
+    stop_grace_period: 60s            # SIGTERM -> workers stop claiming and release rows; leftovers are recovered on restart
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: "1.0"
+    mem_limit: 768m
+    pids_limit: 256
+    expose:
+      - "8000"
+    networks:
+      qi:
+        ipv4_address: ${API_IP:-172.28.0.20}
+    # Egress control belongs at the host/network layer: see docs/DEPLOYMENT.md (block RFC1918, 169.254.0.0/16, 100.64.0.0/10).
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Inlined into the browser bundle AT BUILD TIME by Next.js: changing them requires a rebuild.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?set NEXT_PUBLIC_API_URL in .env.production}
+        NEXT_PUBLIC_APPWRITE_ENDPOINT: ${NEXT_PUBLIC_APPWRITE_ENDPOINT:?set NEXT_PUBLIC_APPWRITE_ENDPOINT in .env.production}
+        NEXT_PUBLIC_APPWRITE_PROJECT_ID: ${NEXT_PUBLIC_APPWRITE_PROJECT_ID:?set NEXT_PUBLIC_APPWRITE_PROJECT_ID in .env.production}
+    image: quickindex-web:latest
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      # Next.js writes its runtime cache here; keep it in memory so the root filesystem can stay read-only.
+      - type: tmpfs
+        target: /app/.next/cache
+        tmpfs:
+          size: 134217728
+          mode: 1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: "1.0"
+    mem_limit: 512m
+    pids_limit: 256
+    expose:
+      - "3000"
+    networks:
+      qi:
+        ipv4_address: ${WEB_IP:-172.28.0.30}
+
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      APPWRITE_ORIGIN: ${APPWRITE_ORIGIN:-https://cloud.appwrite.io}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificates: keep this volume or you will re-request them on every start
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    cpus: "0.5"
+    mem_limit: 256m
+    networks:
+      qi:
+        ipv4_address: ${PROXY_IP:-172.28.0.10}
+
+networks:
+  qi:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${QI_SUBNET:-172.28.0.0/24}   # fixed addresses so uvicorn can trust exactly one proxy IP
+
+volumes:
+  caddy_data:
+  caddy_config:

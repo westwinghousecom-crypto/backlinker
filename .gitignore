@@ -1,0 +1,27 @@
+# Secrets and local environments: never commit these.
+.env
+.env.*
+!.env.example
+!.env.production.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+!backend/.env.production.example
+frontend/.env*
+!frontend/.env.example
+
+# Google OAuth client downloads and any key material
+client_secret*.json
+*credentials*.json
+service-account*.json
+*.pem
+*.key
+
+# Local tooling output
+.venv/
+node_modules/
+.next/
+__pycache__/
+.pytest_cache/
+backups/
+*.bak

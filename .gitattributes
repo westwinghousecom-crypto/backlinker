@@ -1,0 +1,5 @@
+# Keep deployment and shell-sensitive files LF on every platform (Docker, Caddy and CI break or misbehave on CRLF).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.svg text

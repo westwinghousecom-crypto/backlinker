@@ -1,0 +1,30 @@
+# Never ship secrets, local environments, tests or tooling inside the image.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment files and credentials (settings are passed at run time)
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+*.p12
+client_secret*.json
+*credentials*.json
+service-account*.json
+
+# Tests and docs are not needed to run the API (operator scripts ARE copied: see Dockerfile)
+tests/
+requirements-dev.txt
+pytest.ini
+*.md
+.git/
+.gitignore
+Dockerfile
+.dockerignore

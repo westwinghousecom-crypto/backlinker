@@ -1,0 +1,57 @@
+# Caddy 2: automatic HTTPS (Let's Encrypt/ZeroSSL), HTTP->HTTPS redirect, compression and security headers.
+# Variables come from the proxy service's environment in docker-compose.yml.
+# Not validated in the environment that wrote this file (Caddy not installed there): run `caddy validate` before use.
+
+{
+	email {$ACME_EMAIL}
+}
+
+# ---------------------------------------------------------------------------- web app
+{$APP_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		# Conservative CSP for this app: fonts are self-hosted (next/font), images are local/data URIs, the browser calls
+		# only the QuickIndex API and the Appwrite endpoint (sign-in). Next.js App Router emits small inline scripts and
+		# Tailwind/shadcn inline styles, so 'unsafe-inline' is needed until a nonce-based CSP (middleware) is added.
+		# Google OAuth is a top-level navigation (window.location), which connect-src/form-action do not restrict.
+		# Verify in a real browser (console shows CSP violations) before relying on it.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://{$API_DOMAIN} {$APPWRITE_ORIGIN} https://*.cloud.appwrite.io; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+		-Server
+	}
+
+	reverse_proxy web:3000
+}
+
+# ---------------------------------------------------------------------------- API
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# 1,000 URLs of up to 2,000 characters each is about 2 MB; allow headroom, refuse absurd bodies early.
+	request_body {
+		max_size 4MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		# The API only returns JSON, XML feeds and redirects: no active content is ever needed.
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+		-Server
+	}
+
+	# Caddy overwrites X-Forwarded-For with the real client address (no trusted upstream proxy is configured), and uvicorn
+	# trusts those headers from this proxy's fixed IP only (FORWARDED_ALLOW_IPS).
+	reverse_proxy api:8000 {
+		health_uri /health/live
+		health_interval 30s
+	}
+}
