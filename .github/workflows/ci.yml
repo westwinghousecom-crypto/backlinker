@@ -27,7 +27,7 @@ jobs:
     steps:
       # Third-party actions are pinned to a major version tag. For stricter supply-chain control, pin each to a full commit SHA
       # (Dependabot below keeps them updated).
-      - uses: actions/checkout@v4 # whole repo: tests/test_frontend_contract.py reads ../frontend
+      - uses: actions/checkout@v7 # whole repo: tests/test_frontend_contract.py reads ../frontend
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14" # confirm this version is available on the runner image; adjust if not
@@ -52,7 +52,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -76,7 +76,7 @@ jobs:
     timeout-minutes: 25
     needs: [backend, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v3
       - name: Build API image (not pushed)
         uses: docker/build-push-action@v6
@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # gitleaks scans history
       - uses: actions/setup-python@v5
