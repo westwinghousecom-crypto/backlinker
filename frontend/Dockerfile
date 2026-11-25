@@ -14,13 +14,13 @@
 # glibc (Debian) base, not Alpine: the Tailwind/LightningCSS/SWC native binaries are published for linux-gnu.
 
 # ---------------------------------------------------------------------------------------------- deps
-FROM node:22-bookworm-slim AS deps
+FROM node:25-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
 # ---------------------------------------------------------------------------------------------- build
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL
 ARG NEXT_PUBLIC_APPWRITE_ENDPOINT
@@ -36,7 +36,7 @@ RUN npm run build
 
 # ---------------------------------------------------------------------------------------------- runtime
 # Production image: no npm, no devDependencies, no source. Only the traced standalone server, static assets and public/.
-FROM node:22-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
